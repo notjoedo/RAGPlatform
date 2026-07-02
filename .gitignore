@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Data
+db/chroma/
+db/uploads/
+db/rag.db
+
+# Environment
+.env
+
+# Build
+frontend/dist/
+.DS_Store
