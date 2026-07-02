@@ -1,9 +1,10 @@
 import { useCallback, useRef, useState } from 'react'
 import type { Document } from '../api/client'
+import { filterSupportedFiles, getFilesFromDataTransfer } from '../utils/files'
 
 interface Props {
   documents: Document[]
-  onUpload: (file: File) => Promise<void>
+  onUploadFiles: (files: File[]) => Promise<void>
   onIngestLink: (url: string) => Promise<void>
   disabled: boolean
 }
@@ -39,31 +40,53 @@ function StatusBadge({ doc }: { doc: Document }) {
   )
 }
 
-export default function UploadZone({ documents, onUpload, onIngestLink, disabled }: Props) {
+export default function UploadZone({ documents, onUploadFiles, onIngestLink, disabled }: Props) {
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadLabel, setUploadLabel] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   const busy = uploading
 
   const handleFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files?.length || disabled || busy) return
+    async (files: File[]) => {
+      const supported = filterSupportedFiles(files)
+      if (!supported.length || disabled || busy) {
+        if (files.length && !supported.length) {
+          setError('No supported files found. Use PDF, TXT, or MD.')
+        }
+        return
+      }
+
       setError('')
       setUploading(true)
+      setUploadLabel(
+        supported.length === 1 ? 'Uploading…' : `Uploading ${supported.length} files…`,
+      )
       try {
-        await onUpload(files[0])
+        await onUploadFiles(supported)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Upload failed')
       } finally {
         setUploading(false)
+        setUploadLabel('')
         if (fileInputRef.current) fileInputRef.current.value = ''
+        if (folderInputRef.current) folderInputRef.current.value = ''
       }
     },
-    [disabled, busy, onUpload],
+    [disabled, busy, onUploadFiles],
   )
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    if (disabled || busy) return
+    const files = await getFilesFromDataTransfer(e.dataTransfer)
+    await handleFiles(files)
+  }
 
   const handleLinkSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -96,25 +119,18 @@ export default function UploadZone({ documents, onUpload, onIngestLink, disabled
         Sources
       </h2>
 
-      <button
-        type="button"
-        onClick={() => fileInputRef.current?.click()}
+      <div
         onDragOver={(e) => {
           e.preventDefault()
           if (!disabled) setDragging(true)
         }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDragging(false)
-          handleFiles(e.dataTransfer.files)
-        }}
-        disabled={disabled || busy}
+        onDrop={handleDrop}
         className={`w-full rounded-lg border border-dashed px-3 py-4 text-center transition-colors ${
           dragging
             ? 'border-ink bg-surface'
             : 'border-line-strong hover:border-ink-muted hover:bg-surface'
-        } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+        } ${disabled ? 'opacity-40' : ''}`}
       >
         <div className="flex flex-col items-center gap-1.5">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="text-ink-muted" aria-hidden="true">
@@ -127,20 +143,59 @@ export default function UploadZone({ documents, onUpload, onIngestLink, disabled
             />
           </svg>
           <span className="text-[13px] font-medium text-ink-secondary">
-            {busy ? 'Processing…' : disabled ? 'Select a pipeline first' : 'Upload a document'}
+            {busy
+              ? uploadLabel || 'Processing…'
+              : disabled
+                ? 'Select a pipeline first'
+                : 'Add documents'}
           </span>
           {!disabled && !busy && (
-            <span className="text-[11px] text-ink-muted">PDF, TXT or MD · drag &amp; drop or click</span>
+            <span className="text-[11px] text-ink-muted">
+              PDF, TXT or MD · drag files or a folder here
+            </span>
+          )}
+          {!disabled && !busy && (
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-[11px] font-medium text-accent hover:text-accent-hover transition-colors"
+              >
+                Browse files
+              </button>
+              <span className="text-ink-muted">·</span>
+              <button
+                type="button"
+                onClick={() => folderInputRef.current?.click()}
+                className="text-[11px] font-medium text-accent hover:text-accent-hover transition-colors"
+              >
+                Browse folder
+              </button>
+            </div>
           )}
         </div>
-      </button>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
         accept=".pdf,.txt,.md"
+        multiple
         className="hidden"
         disabled={disabled || busy}
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          if (e.target.files) void handleFiles(Array.from(e.target.files))
+        }}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        // @ts-expect-error webkitdirectory is non-standard but widely supported
+        webkitdirectory=""
+        className="hidden"
+        disabled={disabled || busy}
+        onChange={(e) => {
+          if (e.target.files) void handleFiles(Array.from(e.target.files))
+        }}
       />
 
       <form onSubmit={handleLinkSubmit} className="mt-3 flex gap-2" onPaste={handlePaste}>

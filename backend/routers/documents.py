@@ -173,6 +173,54 @@ async def _process_crawl(
                 q.append((link, depth + 1))
 
 
+def _queue_upload(
+    pipeline_id: str,
+    filename: str,
+    content: bytes,
+    background_tasks: BackgroundTasks,
+) -> DocumentResponse:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type for {filename}. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
+        )
+
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=400, detail=f"{filename} exceeds 10 MB limit")
+
+    upload_dir = Path(settings.upload_dir) / pipeline_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    doc_id = str(uuid.uuid4())
+    file_path = upload_dir / f"{doc_id}{suffix}"
+    file_path.write_bytes(content)
+
+    doc = db.create_document(
+        pipeline_id=pipeline_id,
+        filename=filename,
+        file_path=str(file_path),
+        status="processing",
+    )
+
+    background_tasks.add_task(
+        _process_document,
+        pipeline_id,
+        doc["id"],
+        filename,
+        file_path,
+    )
+
+    return DocumentResponse(
+        id=doc["id"],
+        pipeline_id=pipeline_id,
+        filename=filename,
+        status=DocumentStatus.processing,
+        chunk_count=0,
+        created_at=doc["created_at"],
+    )
+
+
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     pipeline_id: str,
@@ -185,47 +233,35 @@ async def upload_document(
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename required")
 
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in SUPPORTED_EXTENSIONS:
+    content = await file.read()
+    return _queue_upload(pipeline_id, file.filename, content, background_tasks)
+
+
+@router.post("/batch", response_model=list[DocumentResponse], status_code=status.HTTP_201_CREATED)
+async def upload_documents_batch(
+    pipeline_id: str,
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    _: None = Depends(require_api_key),
+) -> list[DocumentResponse]:
+    _ensure_pipeline(pipeline_id)
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+    if len(files) > settings.max_batch_files:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
+            detail=f"Too many files. Maximum is {settings.max_batch_files}",
         )
 
-    content = await file.read()
-    if len(content) > settings.max_upload_bytes:
-        raise HTTPException(status_code=400, detail="File exceeds 10 MB limit")
+    responses: list[DocumentResponse] = []
+    for file in files:
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="Filename required")
+        content = await file.read()
+        responses.append(_queue_upload(pipeline_id, file.filename, content, background_tasks))
 
-    upload_dir = Path(settings.upload_dir) / pipeline_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    doc_id = str(uuid.uuid4())
-    file_path = upload_dir / f"{doc_id}{suffix}"
-    file_path.write_bytes(content)
-
-    doc = db.create_document(
-        pipeline_id=pipeline_id,
-        filename=file.filename,
-        file_path=str(file_path),
-        status="processing",
-    )
-
-    background_tasks.add_task(
-        _process_document,
-        pipeline_id,
-        doc["id"],
-        file.filename,
-        file_path,
-    )
-
-    return DocumentResponse(
-        id=doc["id"],
-        pipeline_id=pipeline_id,
-        filename=file.filename,
-        status=DocumentStatus.processing,
-        chunk_count=0,
-        created_at=doc["created_at"],
-    )
+    return responses
 
 
 @router.post("/link", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)

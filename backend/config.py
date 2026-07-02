@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     upload_dir: str = str(ROOT_DIR / "db" / "uploads")
     sqlite_path: str = str(ROOT_DIR / "db" / "rag.db")
     max_upload_bytes: int = 10 * 1024 * 1024
+    max_batch_files: int = 100
     chunk_size: int = 500
     chunk_overlap: int = 50
     top_k: int = 5

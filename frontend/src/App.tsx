@@ -6,6 +6,7 @@ import {
   listDocuments,
   listPipelines,
   uploadDocument,
+  uploadDocuments,
   ingestLink,
   type Document,
   type Pipeline,
@@ -107,9 +108,13 @@ export default function App() {
     await loadPipelines(apiKey)
   }
 
-  const handleUpload = async (file: File) => {
-    if (!selectedId) return
-    await uploadDocument(apiKey, selectedId, file)
+  const handleUploadFiles = async (files: File[]) => {
+    if (!selectedId || !files.length) return
+    if (files.length === 1) {
+      await uploadDocument(apiKey, selectedId, files[0])
+    } else {
+      await uploadDocuments(apiKey, selectedId, files)
+    }
     await loadDocuments(apiKey, selectedId)
     setSidebarTab('sources')
   }
@@ -233,7 +238,7 @@ export default function App() {
             <div className="flex-1 min-h-0">
               <UploadZone
                 documents={documents}
-                onUpload={handleUpload}
+                onUploadFiles={handleUploadFiles}
                 onIngestLink={handleIngestLink}
                 disabled={!selectedId}
               />

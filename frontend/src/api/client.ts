@@ -81,14 +81,36 @@ export async function listDocuments(apiKey: string, pipelineId: string): Promise
   return res.json()
 }
 
+function uploadFilename(file: File): string {
+  return file.webkitRelativePath || file.name
+}
+
 export async function uploadDocument(
   apiKey: string,
   pipelineId: string,
   file: File,
 ): Promise<Document> {
   const form = new FormData()
-  form.append('file', file)
+  form.append('file', file, uploadFilename(file))
   const res = await fetch(`${API_BASE}/pipelines/${pipelineId}/documents`, {
+    method: 'POST',
+    headers: { 'X-API-Key': apiKey },
+    body: form,
+  })
+  if (!res.ok) throw new Error(await parseError(res, 'Upload failed'))
+  return res.json()
+}
+
+export async function uploadDocuments(
+  apiKey: string,
+  pipelineId: string,
+  files: File[],
+): Promise<Document[]> {
+  const form = new FormData()
+  for (const file of files) {
+    form.append('files', file, uploadFilename(file))
+  }
+  const res = await fetch(`${API_BASE}/pipelines/${pipelineId}/documents/batch`, {
     method: 'POST',
     headers: { 'X-API-Key': apiKey },
     body: form,
