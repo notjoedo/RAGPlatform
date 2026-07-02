@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   checkHealth,
   createPipeline,
@@ -30,6 +30,8 @@ export default function App() {
   )
   const [ollamaOk, setOllamaOk] = useState(true)
   const [loadingPipelines, setLoadingPipelines] = useState(false)
+  const [sidebarTab, setSidebarTab] = useState<'pipelines' | 'sources'>('pipelines')
+  const docPollRef = useRef<number | null>(null)
 
   const loadPipelines = useCallback(async (key: string) => {
     setLoadingPipelines(true)
@@ -58,17 +60,32 @@ export default function App() {
       .catch(() => setOllamaOk(false))
   }, [apiKey, loadPipelines])
 
+  const hasProcessingDocs = useMemo(
+    () => documents.some((d) => d.status === 'processing'),
+    [documents],
+  )
+
   useEffect(() => {
     if (!apiKey || !selectedId) {
       setDocuments([])
+      if (docPollRef.current) window.clearInterval(docPollRef.current)
+      docPollRef.current = null
       return
     }
+
     loadDocuments(apiKey, selectedId).catch(console.error)
-    const interval = setInterval(() => {
+
+    if (docPollRef.current) window.clearInterval(docPollRef.current)
+    const intervalMs = hasProcessingDocs ? 2000 : 10000
+    docPollRef.current = window.setInterval(() => {
       loadDocuments(apiKey, selectedId).catch(console.error)
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [apiKey, selectedId, loadDocuments])
+    }, intervalMs)
+
+    return () => {
+      if (docPollRef.current) window.clearInterval(docPollRef.current)
+      docPollRef.current = null
+    }
+  }, [apiKey, selectedId, loadDocuments, hasProcessingDocs])
 
   useEffect(() => {
     sessionStorage.setItem('provider_api_key', providerApiKey)
@@ -82,6 +99,7 @@ export default function App() {
     const pipeline = await createPipeline(apiKey, name)
     setPipelines((prev) => [pipeline, ...prev.filter((p) => p.id !== pipeline.id)])
     setSelectedId(pipeline.id)
+    setSidebarTab('sources')
   }
 
   const handleDelete = async (id: string) => {
@@ -93,12 +111,14 @@ export default function App() {
     if (!selectedId) return
     await uploadDocument(apiKey, selectedId, file)
     await loadDocuments(apiKey, selectedId)
+    setSidebarTab('sources')
   }
 
   const handleIngestLink = async (url: string) => {
     if (!selectedId) return
     await ingestLink(apiKey, selectedId, url)
     await loadDocuments(apiKey, selectedId)
+    setSidebarTab('sources')
   }
 
   const handleSignOut = () => {
@@ -167,23 +187,58 @@ export default function App() {
 
       <div className="flex-1 flex min-h-0">
         <aside className="w-72 shrink-0 bg-panel border-r border-line flex flex-col min-h-0">
-          {loadingPipelines && pipelines.length === 0 ? (
-            <div className="p-4 text-[13px] text-ink-muted">Loading pipelines…</div>
+          <div className="shrink-0 p-3 border-b border-line">
+            <div className="rounded-lg border border-line bg-surface p-0.5 flex">
+              <button
+                type="button"
+                onClick={() => setSidebarTab('pipelines')}
+                className={`flex-1 text-[12px] font-medium rounded-md px-2.5 py-1.5 transition ${
+                  sidebarTab === 'pipelines'
+                    ? 'bg-panel text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)] border border-line'
+                    : 'text-ink-muted hover:text-ink-secondary'
+                }`}
+              >
+                Pipelines
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarTab('sources')}
+                className={`flex-1 text-[12px] font-medium rounded-md px-2.5 py-1.5 transition ${
+                  sidebarTab === 'sources'
+                    ? 'bg-panel text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)] border border-line'
+                    : 'text-ink-muted hover:text-ink-secondary'
+                }`}
+              >
+                Sources
+              </button>
+            </div>
+          </div>
+
+          {sidebarTab === 'pipelines' ? (
+            loadingPipelines && pipelines.length === 0 ? (
+              <div className="p-4 text-[13px] text-ink-muted">Loading pipelines…</div>
+            ) : (
+              <PipelineList
+                pipelines={pipelines}
+                selectedId={selectedId}
+                onSelect={(id) => {
+                  setSelectedId(id)
+                  setSidebarTab('sources')
+                }}
+                onCreate={handleCreate}
+                onDelete={handleDelete}
+              />
+            )
           ) : (
-            <PipelineList
-              pipelines={pipelines}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onCreate={handleCreate}
-              onDelete={handleDelete}
-            />
+            <div className="flex-1 min-h-0">
+              <UploadZone
+                documents={documents}
+                onUpload={handleUpload}
+                onIngestLink={handleIngestLink}
+                disabled={!selectedId}
+              />
+            </div>
           )}
-          <UploadZone
-            documents={documents}
-            onUpload={handleUpload}
-            onIngestLink={handleIngestLink}
-            disabled={!selectedId}
-          />
         </aside>
 
         <main className="flex-1 flex flex-col min-w-0 min-h-0">

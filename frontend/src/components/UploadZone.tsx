@@ -91,9 +91,9 @@ export default function UploadZone({ documents, onUpload, onIngestLink, disabled
   }
 
   return (
-    <div className="shrink-0 border-t border-line p-4 max-h-[45%] flex flex-col">
+    <div className="h-full flex flex-col min-h-0 p-4">
       <h2 className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted mb-3">
-        Documents
+        Sources
       </h2>
 
       <button
@@ -169,7 +169,7 @@ export default function UploadZone({ documents, onUpload, onIngestLink, disabled
       )}
 
       {documents.length > 0 && (
-        <ul className="mt-3 space-y-1 overflow-y-auto">
+        <ul className="mt-3 space-y-1 overflow-y-auto min-h-0">
           {documents.map((doc) => (
             <li
               key={doc.id}

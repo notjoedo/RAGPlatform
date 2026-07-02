@@ -38,6 +38,8 @@ export default function ChatPanel({
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const tokenBufferRef = useRef('')
+  const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
     setMessages([])
@@ -47,6 +49,13 @@ export default function ChatPanel({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+  }, [])
 
   const autosize = () => {
     const el = textareaRef.current
@@ -72,6 +81,8 @@ export default function ChatPanel({
     let assistantContent = ''
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
+    tokenBufferRef.current = ''
+
     try {
       await streamChat(
         apiKey,
@@ -80,11 +91,18 @@ export default function ChatPanel({
         provider,
         providerApiKey || null,
         (token) => {
-          assistantContent += token
-          setMessages((prev) => {
-            const updated = [...prev]
-            updated[updated.length - 1] = { role: 'assistant', content: assistantContent }
-            return updated
+          tokenBufferRef.current += token
+          if (rafRef.current) return
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = null
+            const flushed = tokenBufferRef.current
+            tokenBufferRef.current = ''
+            assistantContent += flushed
+            setMessages((prev) => {
+              const updated = [...prev]
+              updated[updated.length - 1] = { role: 'assistant', content: assistantContent }
+              return updated
+            })
           })
         },
         (err) => {
@@ -95,6 +113,8 @@ export default function ChatPanel({
       setError(err instanceof Error ? err.message : 'Chat failed')
       setMessages((prev) => prev.slice(0, -1))
     } finally {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
       setLoading(false)
     }
   }
