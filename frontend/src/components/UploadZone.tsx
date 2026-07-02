@@ -6,6 +6,7 @@ interface Props {
   documents: Document[]
   onUploadFiles: (files: File[]) => Promise<void>
   onIngestLink: (url: string) => Promise<void>
+  onDeleteDocument: (documentId: string) => Promise<void>
   disabled: boolean
 }
 
@@ -40,16 +41,24 @@ function StatusBadge({ doc }: { doc: Document }) {
   )
 }
 
-export default function UploadZone({ documents, onUploadFiles, onIngestLink, disabled }: Props) {
+export default function UploadZone({
+  documents,
+  onUploadFiles,
+  onIngestLink,
+  onDeleteDocument,
+  disabled,
+}: Props) {
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadLabel, setUploadLabel] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
   const [error, setError] = useState('')
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
 
-  const busy = uploading
+  const busy = uploading || deletingId !== null
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -110,6 +119,20 @@ export default function UploadZone({ documents, onUploadFiles, onIngestLink, dis
     if (/^https?:\/\//i.test(pasted)) {
       e.preventDefault()
       setLinkUrl(pasted)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id)
+    setError('')
+    try {
+      await onDeleteDocument(id)
+      setConfirmingId(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete source')
+      setConfirmingId(null)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -225,27 +248,72 @@ export default function UploadZone({ documents, onUploadFiles, onIngestLink, dis
 
       {documents.length > 0 && (
         <ul className="mt-3 space-y-1 overflow-y-auto min-h-0">
-          {documents.map((doc) => (
-            <li
-              key={doc.id}
-              className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-surface transition-colors"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0 text-ink-muted" aria-hidden="true">
-                  <path
-                    d="M9 1.5H4.5C3.7 1.5 3 2.2 3 3V13C3 13.8 3.7 14.5 4.5 14.5H11.5C12.3 14.5 13 13.8 13 13V5.5M9 1.5L13 5.5M9 1.5V4.5C9 5.1 9.4 5.5 10 5.5H13"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span className="text-[13px] text-ink-secondary truncate" title={doc.filename}>
-                  {doc.filename}
-                </span>
-              </div>
-              <StatusBadge doc={doc} />
-            </li>
-          ))}
+          {documents.map((doc) => {
+            const confirming = confirmingId === doc.id
+            const deleting = deletingId === doc.id
+            return (
+              <li
+                key={doc.id}
+                className="group relative flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-surface transition-colors"
+              >
+                <div className="flex items-center gap-2 min-w-0 pr-8">
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0 text-ink-muted" aria-hidden="true">
+                    <path
+                      d="M9 1.5H4.5C3.7 1.5 3 2.2 3 3V13C3 13.8 3.7 14.5 4.5 14.5H11.5C12.3 14.5 13 13.8 13 13V5.5M9 1.5L13 5.5M9 1.5V4.5C9 5.1 9.4 5.5 10 5.5H13"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <span className="text-[13px] text-ink-secondary truncate" title={doc.filename}>
+                    {doc.filename}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <StatusBadge doc={doc} />
+                  {confirming ? (
+                    <div className="flex items-center gap-1 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(doc.id)}
+                        disabled={deleting}
+                        className="text-[11px] font-medium text-danger bg-danger-soft rounded px-1.5 py-0.5 hover:brightness-95 transition disabled:opacity-50"
+                      >
+                        {deleting ? '…' : 'Delete'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingId(null)}
+                        disabled={deleting}
+                        className="text-[11px] text-ink-muted hover:text-ink px-1 py-0.5 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setConfirmingId(doc.id)}
+                      disabled={disabled || busy}
+                      aria-label={`Delete ${doc.filename}`}
+                      className="p-1 rounded-md text-ink-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-danger hover:bg-danger-soft transition disabled:opacity-40"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path
+                          d="M2.5 4H13.5M6.5 7V11M9.5 7V11M3.5 4L4 12.5C4 13.3 4.7 14 5.5 14H10.5C11.3 14 12 13.3 12 12.5L12.5 4M6 4V2.5C6 2.2 6.2 2 6.5 2H9.5C9.8 2 10 2.2 10 2.5V4"
+                          stroke="currentColor"
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

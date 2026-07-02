@@ -38,3 +38,11 @@ def delete_collection(pipeline_id: str) -> None:
         client.delete_collection(name)
     except (ValueError, chromadb.errors.NotFoundError):
         pass
+
+
+def delete_document_chunks(pipeline_id: str, doc_id: str) -> None:
+    try:
+        collection = get_collection(pipeline_id)
+        collection.delete(where={"doc_id": doc_id})
+    except Exception:
+        pass

@@ -20,6 +20,7 @@ from parsers.url import (
 )
 from services.ingest import SUPPORTED_EXTENSIONS, ingest_document, ingest_text
 from services.embeddings import embedding_service
+from services.documents import list_available_documents, remove_document
 
 router = APIRouter(prefix="/pipelines/{pipeline_id}/documents", tags=["documents"])
 
@@ -344,6 +345,20 @@ def list_documents(
     _: None = Depends(require_api_key),
 ) -> list[DocumentResponse]:
     _ensure_pipeline(pipeline_id)
-    docs = db.list_documents(pipeline_id)
-    # db returns file_path too; response model does not include it.
+    docs = list_available_documents(pipeline_id)
     return [DocumentResponse(**{k: v for k, v in d.items() if k != "file_path"}) for d in docs]
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    pipeline_id: str,
+    document_id: str,
+    _: None = Depends(require_api_key),
+) -> None:
+    _ensure_pipeline(pipeline_id)
+
+    doc = db.get_document(document_id)
+    if not doc or doc["pipeline_id"] != pipeline_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    remove_document(doc, pipeline_id)

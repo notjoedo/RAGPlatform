@@ -1,10 +1,13 @@
-import type { Provider } from '../api/client'
+import type { ChatModelOption, Provider } from '../api/client'
 
 interface Props {
   provider: Provider
   providerApiKey: string
+  modelOptions: ChatModelOption[]
+  selectedModel: string
   onProviderChange: (provider: Provider) => void
   onApiKeyChange: (key: string) => void
+  onModelChange: (model: string) => void
 }
 
 const PROVIDERS: { value: Provider; label: string }[] = [
@@ -16,8 +19,11 @@ const PROVIDERS: { value: Provider; label: string }[] = [
 export default function ProviderToggle({
   provider,
   providerApiKey,
+  modelOptions,
+  selectedModel,
   onProviderChange,
   onApiKeyChange,
+  onModelChange,
 }: Props) {
   return (
     <div className="flex items-center gap-2">
@@ -36,6 +42,18 @@ export default function ProviderToggle({
           </button>
         ))}
       </div>
+      <select
+        value={selectedModel}
+        onChange={(e) => onModelChange(e.target.value)}
+        aria-label="Chat model"
+        className="max-w-44 rounded-lg border border-line-strong bg-panel px-2.5 py-1.5 text-[12px] text-ink focus:outline-none focus:border-ink focus:ring-2 focus:ring-ink/5 transition"
+      >
+        {modelOptions.map(({ id, label }) => (
+          <option key={id} value={id}>
+            {label}
+          </option>
+        ))}
+      </select>
       {provider !== 'ollama' && (
         <input
           type="password"

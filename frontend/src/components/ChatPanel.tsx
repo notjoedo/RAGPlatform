@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Provider } from '../api/client'
+import type { ChatMessage, Provider } from '../api/client'
 import { streamChat } from '../api/client'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
+interface Message extends ChatMessage {}
 
 interface Props {
   apiKey: string
@@ -13,6 +10,8 @@ interface Props {
   pipelineName: string | null
   provider: Provider
   providerApiKey: string
+  chatModel: string
+  chatModelLabel: string
 }
 
 function TypingIndicator() {
@@ -31,6 +30,8 @@ export default function ChatPanel({
   pipelineName,
   provider,
   providerApiKey,
+  chatModel,
+  chatModelLabel,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -72,6 +73,7 @@ export default function ChatPanel({
     }
 
     const userMessage = input.trim()
+    const history = messages.filter((msg) => msg.content.trim())
     setInput('')
     setError('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
@@ -88,8 +90,10 @@ export default function ChatPanel({
         apiKey,
         pipelineId,
         userMessage,
+        history,
         provider,
         providerApiKey || null,
+        chatModel,
         (token) => {
           tokenBufferRef.current += token
           if (rafRef.current) return
@@ -144,8 +148,11 @@ export default function ChatPanel({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="shrink-0 px-6 h-12 flex items-center border-b border-line bg-panel">
+      <div className="shrink-0 px-6 h-12 flex items-center justify-between gap-4 border-b border-line bg-panel">
         <h1 className="text-[13px] font-medium text-ink truncate">{pipelineName}</h1>
+        <p className="text-[11px] text-ink-muted shrink-0">
+          {provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : 'Ollama'} · {chatModelLabel}
+        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto">

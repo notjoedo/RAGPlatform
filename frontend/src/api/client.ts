@@ -1,5 +1,10 @@
 export type Provider = 'ollama' | 'openai' | 'anthropic'
 
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export interface Pipeline {
   id: string
   name: string
@@ -20,6 +25,18 @@ export interface Health {
   status: string
   ollama_reachable: boolean
   ollama_url: string
+  ollama_models: string[]
+}
+
+export interface ChatModelOption {
+  id: string
+  label: string
+}
+
+export interface ChatModelsCatalog {
+  anthropic: ChatModelOption[]
+  openai: ChatModelOption[]
+  defaults: Record<Provider, string>
 }
 
 const API_BASE = '/api'
@@ -46,6 +63,12 @@ async function parseError(res: Response, fallback: string): Promise<string> {
 export async function checkHealth(): Promise<Health> {
   const res = await fetch(`${API_BASE}/health`)
   if (!res.ok) throw new Error('Health check failed')
+  return res.json()
+}
+
+export async function fetchChatModels(): Promise<ChatModelsCatalog> {
+  const res = await fetch(`${API_BASE}/models`)
+  if (!res.ok) throw new Error('Failed to load chat models')
   return res.json()
 }
 
@@ -79,6 +102,18 @@ export async function listDocuments(apiKey: string, pipelineId: string): Promise
   })
   if (!res.ok) throw new Error(await parseError(res, 'Failed to list documents'))
   return res.json()
+}
+
+export async function deleteDocument(
+  apiKey: string,
+  pipelineId: string,
+  documentId: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/pipelines/${pipelineId}/documents/${documentId}`, {
+    method: 'DELETE',
+    headers: headers(apiKey),
+  })
+  if (!res.ok) throw new Error(await parseError(res, 'Failed to delete document'))
 }
 
 function uploadFilename(file: File): string {
@@ -137,8 +172,10 @@ export async function streamChat(
   apiKey: string,
   pipelineId: string,
   message: string,
+  history: ChatMessage[],
   provider: Provider,
   providerApiKey: string | null,
+  model: string,
   onToken: (token: string) => void,
   _onError: (error: string) => void,
 ): Promise<void> {
@@ -147,8 +184,10 @@ export async function streamChat(
     headers: headers(apiKey),
     body: JSON.stringify({
       message,
+      history,
       provider,
       api_key: providerApiKey || undefined,
+      model,
     }),
   })
 

@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   checkHealth,
   createPipeline,
+  deleteDocument,
   deletePipeline,
+  fetchChatModels,
   listDocuments,
   listPipelines,
   uploadDocument,
   uploadDocuments,
   ingestLink,
+  type ChatModelsCatalog,
   type Document,
   type Pipeline,
   type Provider,
@@ -17,6 +20,12 @@ import ChatPanel from './components/ChatPanel'
 import PipelineList from './components/PipelineList'
 import ProviderToggle from './components/ProviderToggle'
 import UploadZone from './components/UploadZone'
+import {
+  loadStoredModels,
+  modelsForProvider,
+  resolveSelectedModel,
+  saveStoredModel,
+} from './models'
 
 export default function App() {
   const [apiKey, setApiKey] = useState<string | null>(
@@ -30,6 +39,13 @@ export default function App() {
     () => sessionStorage.getItem('provider_api_key') || '',
   )
   const [ollamaOk, setOllamaOk] = useState(true)
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [chatModelsCatalog, setChatModelsCatalog] = useState<ChatModelsCatalog | null>(null)
+  const [modelsByProvider, setModelsByProvider] = useState<Record<Provider, string>>({
+    ollama: 'llama3.2',
+    openai: 'gpt-4o-mini',
+    anthropic: 'claude-haiku-4-5-20251001',
+  })
   const [loadingPipelines, setLoadingPipelines] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'pipelines' | 'sources'>('pipelines')
   const docPollRef = useRef<number | null>(null)
@@ -56,8 +72,13 @@ export default function App() {
   useEffect(() => {
     if (!apiKey) return
     loadPipelines(apiKey).catch(console.error)
-    checkHealth()
-      .then((h) => setOllamaOk(h.ollama_reachable))
+    Promise.all([checkHealth(), fetchChatModels()])
+      .then(([health, catalog]) => {
+        setOllamaOk(health.ollama_reachable)
+        setOllamaModels(health.ollama_models)
+        setChatModelsCatalog(catalog)
+        setModelsByProvider(loadStoredModels(catalog.defaults))
+      })
       .catch(() => setOllamaOk(false))
   }, [apiKey, loadPipelines])
 
@@ -91,6 +112,25 @@ export default function App() {
   useEffect(() => {
     sessionStorage.setItem('provider_api_key', providerApiKey)
   }, [providerApiKey])
+
+  const handleModelChange = (model: string) => {
+    setModelsByProvider((prev) => {
+      const next = { ...prev, [provider]: model }
+      saveStoredModel(provider, model)
+      return next
+    })
+  }
+
+  const modelOptions = chatModelsCatalog
+    ? modelsForProvider(chatModelsCatalog, provider, ollamaModels)
+    : [{ id: modelsByProvider[provider], label: modelsByProvider[provider] }]
+
+  const selectedModel = chatModelsCatalog
+    ? resolveSelectedModel(provider, modelsByProvider, chatModelsCatalog, ollamaModels)
+    : modelsByProvider[provider]
+
+  const selectedModelLabel =
+    modelOptions.find((option) => option.id === selectedModel)?.label ?? selectedModel
 
   if (!apiKey) {
     return <ApiKeyGate onAuthenticated={setApiKey} />
@@ -126,6 +166,12 @@ export default function App() {
     setSidebarTab('sources')
   }
 
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!selectedId) return
+    await deleteDocument(apiKey, selectedId, documentId)
+    await loadDocuments(apiKey, selectedId)
+  }
+
   const handleSignOut = () => {
     localStorage.removeItem('rag_api_key')
     setApiKey(null)
@@ -152,14 +198,17 @@ export default function App() {
                 <path d="M8 7.5V14.5" stroke="white" strokeWidth="1.4" strokeLinejoin="round" />
               </svg>
             </div>
-            <span className="text-[15px] font-semibold tracking-tight">RAG Platform</span>
+            <span className="text-[15px] font-semibold tracking-tight">Joe's RAG</span>
           </div>
           <div className="flex items-center gap-3">
             <ProviderToggle
               provider={provider}
               providerApiKey={providerApiKey}
+              modelOptions={modelOptions}
+              selectedModel={selectedModel}
               onProviderChange={setProvider}
               onApiKeyChange={setProviderApiKey}
+              onModelChange={handleModelChange}
             />
             <div className="w-px h-5 bg-line" aria-hidden="true" />
             <button
@@ -240,6 +289,7 @@ export default function App() {
                 documents={documents}
                 onUploadFiles={handleUploadFiles}
                 onIngestLink={handleIngestLink}
+                onDeleteDocument={handleDeleteDocument}
                 disabled={!selectedId}
               />
             </div>
@@ -253,6 +303,8 @@ export default function App() {
             pipelineName={selectedPipeline?.name ?? null}
             provider={provider}
             providerApiKey={providerApiKey}
+            chatModel={selectedModel}
+            chatModelLabel={selectedModelLabel}
           />
         </main>
       </div>

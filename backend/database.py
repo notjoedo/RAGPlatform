@@ -154,3 +154,12 @@ def get_document(doc_id: str) -> Optional[dict]:
             (doc_id,),
         ).fetchone()
     return dict(row) if row else None
+
+
+def delete_document(doc_id: str, pipeline_id: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM documents WHERE id = ? AND pipeline_id = ?",
+            (doc_id, pipeline_id),
+        )
+    return cursor.rowcount > 0

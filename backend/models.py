@@ -49,13 +49,37 @@ class DocumentCrawlCreate(BaseModel):
     min_similarity: float = Field(default=0.25, ge=0.0, le=1.0)
 
 
+class ChatRole(str, Enum):
+    user = "user"
+    assistant = "assistant"
+
+
+class ChatMessage(BaseModel):
+    role: ChatRole
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     provider: Provider = Provider.ollama
     api_key: Optional[str] = None
+    model: Optional[str] = Field(default=None, max_length=200)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=40)
+
+
+class ChatModelOption(BaseModel):
+    id: str
+    label: str
+
+
+class ChatModelsResponse(BaseModel):
+    anthropic: list[ChatModelOption]
+    openai: list[ChatModelOption]
+    defaults: dict[str, str]
 
 
 class HealthResponse(BaseModel):
     status: str
     ollama_reachable: bool
     ollama_url: str
+    ollama_models: list[str] = []

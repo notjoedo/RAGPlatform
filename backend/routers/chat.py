@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 
 import database as db
 from auth import require_api_key
+from model_catalog import validate_chat_model
 from models import ChatRequest, Provider
 from services.crawl import crawl_and_ingest_if_needed
 from services.llm import llm_service
@@ -27,6 +28,9 @@ async def chat(
             status_code=400,
             detail=f"API key required for provider: {body.provider.value}",
         )
+
+    if model_error := validate_chat_model(body.provider, body.model):
+        raise HTTPException(status_code=400, detail=model_error)
 
     context = await retrieve_context(
         pipeline_id=pipeline_id,
@@ -53,6 +57,8 @@ async def chat(
                 or "No documents have been indexed yet. If you uploaded a link, try adding a few more pages or ask a more specific question.",
                 provider=body.provider,
                 api_key=body.api_key,
+                model=body.model,
+                history=body.history,
             ):
                 yield f"data: {json.dumps({'token': token})}\n\n"
             yield "data: [DONE]\n\n"

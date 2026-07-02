@@ -8,9 +8,8 @@ backend/**/__pycache__/
 venv/
 
 # Data
-db/chroma/
-db/uploads/
-db/rag.db
+db/
+backend/db/
 
 # Environment
 .env
